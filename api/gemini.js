@@ -2,7 +2,7 @@ export const config = { runtime: 'edge' };
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const BASE       = 'https://generativelanguage.googleapis.com/v1beta';
-const MODEL      = 'gemini-2.0-flash-lite';
+const MODEL      = 'gemini-2.5-flash';
 
 export default async function handler(req) {
   if (req.method === 'OPTIONS') {
