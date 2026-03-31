@@ -22,7 +22,8 @@ export default async function handler(req) {
   const page = url.searchParams.get('page') || '1';
 
   try {
-    const tnUrl = `${TN_BASE}/products?per_page=50&page=${page}`;
+    // published=true filtra solo productos activos/visibles en la tienda
+    const tnUrl = `${TN_BASE}/products?per_page=50&page=${page}&published=true`;
     const resp  = await fetch(tnUrl, {
       headers: {
         'Authentication': `bearer ${TOKEN}`,
@@ -38,7 +39,13 @@ export default async function handler(req) {
     }
 
     const data = await resp.json();
-    return new Response(JSON.stringify(data), { status: 200, headers: corsHeaders() });
+
+    // Filtro adicional por si acaso
+    const filtered = Array.isArray(data)
+      ? data.filter(p => p.published === true)
+      : data;
+
+    return new Response(JSON.stringify(filtered), { status: 200, headers: corsHeaders() });
 
   } catch (err) {
     return new Response(
