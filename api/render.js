@@ -60,9 +60,15 @@ export default async function handler(req) {
       );
     }
 
-    // Devolver imagen como base64
+    // Devolver imagen como base64 (sin spread para evitar stack overflow en imágenes grandes)
     const imgBuffer = await resp.arrayBuffer();
-    const imgBase64 = btoa(String.fromCharCode(...new Uint8Array(imgBuffer)));
+    const imgBytes  = new Uint8Array(imgBuffer);
+    let imgBase64   = '';
+    const CHUNK     = 8192;
+    for (let i = 0; i < imgBytes.length; i += CHUNK) {
+      imgBase64 += String.fromCharCode.apply(null, imgBytes.subarray(i, i + CHUNK));
+    }
+    imgBase64 = btoa(imgBase64);
 
     return new Response(
       JSON.stringify({ image: imgBase64, mime: 'image/jpeg' }),
