@@ -1,7 +1,8 @@
 export const config = { runtime: 'edge' };
 
-const STABILITY_KEY = process.env.STABILITY_API_KEY;
-const STABILITY_URL = 'https://api.stability.ai/v2beta/stable-image/generate/sd3';
+const STABILITY_KEY  = process.env.STABILITY_API_KEY;
+const URL_REPLACE    = 'https://api.stability.ai/v2beta/stable-image/edit/search-and-replace';
+const URL_IMG2IMG    = 'https://api.stability.ai/v2beta/stable-image/generate/sd3';
 
 function corsHeaders() {
   return {
@@ -9,6 +10,16 @@ function corsHeaders() {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
+}
+
+function chunkedBtoa(buffer) {
+  const bytes  = new Uint8Array(buffer);
+  let   result = '';
+  const CHUNK  = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    result += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(result);
 }
 
 export default async function handler(req) {
@@ -21,7 +32,7 @@ export default async function handler(req) {
 
   try {
     const body = await req.json();
-    const { imageBase64, imageMime, prompt } = body;
+    const { imageBase64, imageMime, prompt, surfaceType } = body;
 
     if (!imageBase64 || !prompt) {
       return new Response(
@@ -30,59 +41,71 @@ export default async function handler(req) {
       );
     }
 
-    // Enriquecer prompt: SOLO cambiar paredes/pisos, respetar todo lo demas
-    const enrichedPrompt = prompt
-      + ', keep all furniture exactly as in original photo'
-      + ', keep all objects and decorations unchanged'
-      + ', only apply new texture on walls and floor surfaces'
-      + ', same room composition, same lighting conditions, same camera angle and perspective'
-      + ', photorealistic architectural visualization, interior design, 4K ultra detailed';
-
-    // Negative prompt: evitar cambios en muebles y estructura
-    const negativePrompt = 'different furniture, moved objects, new decorations, different room layout, '
-      + 'different perspective, different lighting, changed decor, removed furniture, '
-      + 'blurry, low quality, distorted, cartoon, illustration, painting';
-
     // Convertir base64 a binario
     const imageBytes = Uint8Array.from(atob(imageBase64), c => c.charCodeAt(0));
-    const blob = new Blob([imageBytes], { type: imageMime || 'image/jpeg' });
+    const blob       = new Blob([imageBytes], { type: imageMime || 'image/jpeg' });
 
-    // Form data para Stability AI
+    // Determinar qué superficie buscar
+    const surface = surfaceType === 'piso'
+      ? 'the floor'
+      : 'the walls';
+
+    // Search and Replace: busca la superficie y la reemplaza con la textura
+    const replacePrompt = prompt
+      + ', high quality texture on ' + surface
+      + ', photorealistic, interior design, 4K, ultra detailed surface material';
+
     const formData = new FormData();
-    formData.append('image', blob, 'room.jpg');
-    formData.append('prompt', enrichedPrompt);
-    formData.append('negative_prompt', negativePrompt);
-    formData.append('mode', 'image-to-image');
-    formData.append('strength', '0.55');         // bajo = mas fiel a la foto original
-    formData.append('model', 'sd3-large-turbo');
-    formData.append('output_format', 'jpeg');
+    formData.append('image',          blob, 'room.jpg');
+    formData.append('prompt',         replacePrompt);
+    formData.append('search_prompt',  surface + ' in the room');
+    formData.append('output_format',  'jpeg');
 
-    const resp = await fetch(STABILITY_URL, {
-      method: 'POST',
+    let resp = await fetch(URL_REPLACE, {
+      method:  'POST',
       headers: {
         'Authorization': `Bearer ${STABILITY_KEY}`,
-        'Accept': 'image/*',
+        'Accept':        'image/*',
       },
       body: formData,
     });
 
+    // Si search-and-replace falla, fallback a img2img con strength 0.65
     if (!resp.ok) {
       const errText = await resp.text();
-      return new Response(
-        JSON.stringify({ error: `Stability AI error ${resp.status}: ${errText}` }),
-        { status: resp.status, headers: { ...corsHeaders(), 'Content-Type': 'application/json' } }
-      );
+      console.log('Search-replace failed, falling back to img2img:', errText);
+
+      const fd2 = new FormData();
+      fd2.append('image',           blob, 'room.jpg');
+      fd2.append('prompt',          prompt
+        + ', apply ' + (surfaceType === 'piso' ? 'floor' : 'wall') + ' material texture'
+        + ', keep furniture and objects unchanged'
+        + ', photorealistic interior, same lighting, 4K');
+      fd2.append('negative_prompt', 'changed furniture, moved objects, different layout, blurry, low quality');
+      fd2.append('mode',            'image-to-image');
+      fd2.append('strength',        '0.65');
+      fd2.append('model',           'sd3-large-turbo');
+      fd2.append('output_format',   'jpeg');
+
+      resp = await fetch(URL_IMG2IMG, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${STABILITY_KEY}`,
+          'Accept':        'image/*',
+        },
+        body: fd2,
+      });
+
+      if (!resp.ok) {
+        const err2 = await resp.text();
+        return new Response(
+          JSON.stringify({ error: `Stability AI error ${resp.status}: ${err2}` }),
+          { status: resp.status, headers: { ...corsHeaders(), 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    // Devolver imagen como base64 (chunked para evitar stack overflow)
-    const imgBuffer = await resp.arrayBuffer();
-    const imgBytes  = new Uint8Array(imgBuffer);
-    let imgBase64   = '';
-    const CHUNK     = 8192;
-    for (let i = 0; i < imgBytes.length; i += CHUNK) {
-      imgBase64 += String.fromCharCode.apply(null, imgBytes.subarray(i, i + CHUNK));
-    }
-    imgBase64 = btoa(imgBase64);
+    const imgBase64 = chunkedBtoa(await resp.arrayBuffer());
 
     return new Response(
       JSON.stringify({ image: imgBase64, mime: 'image/jpeg' }),
