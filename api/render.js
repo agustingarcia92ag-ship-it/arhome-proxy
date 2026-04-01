@@ -30,17 +30,31 @@ export default async function handler(req) {
       );
     }
 
+    // Enriquecer prompt: SOLO cambiar paredes/pisos, respetar todo lo demas
+    const enrichedPrompt = prompt
+      + ', keep all furniture exactly as in original photo'
+      + ', keep all objects and decorations unchanged'
+      + ', only apply new texture on walls and floor surfaces'
+      + ', same room composition, same lighting conditions, same camera angle and perspective'
+      + ', photorealistic architectural visualization, interior design, 4K ultra detailed';
+
+    // Negative prompt: evitar cambios en muebles y estructura
+    const negativePrompt = 'different furniture, moved objects, new decorations, different room layout, '
+      + 'different perspective, different lighting, changed decor, removed furniture, '
+      + 'blurry, low quality, distorted, cartoon, illustration, painting';
+
     // Convertir base64 a binario
     const imageBytes = Uint8Array.from(atob(imageBase64), c => c.charCodeAt(0));
     const blob = new Blob([imageBytes], { type: imageMime || 'image/jpeg' });
 
-    // Armar form data para Stability AI
+    // Form data para Stability AI
     const formData = new FormData();
     formData.append('image', blob, 'room.jpg');
-    formData.append('prompt', prompt);
+    formData.append('prompt', enrichedPrompt);
+    formData.append('negative_prompt', negativePrompt);
     formData.append('mode', 'image-to-image');
-    formData.append('strength', '0.75');        // cuánto transforma (0=nada, 1=todo)
-    formData.append('model', 'sd3-large-turbo'); // rápido y buena calidad
+    formData.append('strength', '0.55');         // bajo = mas fiel a la foto original
+    formData.append('model', 'sd3-large-turbo');
     formData.append('output_format', 'jpeg');
 
     const resp = await fetch(STABILITY_URL, {
@@ -60,7 +74,7 @@ export default async function handler(req) {
       );
     }
 
-    // Devolver imagen como base64 (sin spread para evitar stack overflow en imágenes grandes)
+    // Devolver imagen como base64 (chunked para evitar stack overflow)
     const imgBuffer = await resp.arrayBuffer();
     const imgBytes  = new Uint8Array(imgBuffer);
     let imgBase64   = '';
