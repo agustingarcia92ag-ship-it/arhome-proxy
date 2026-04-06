@@ -11,16 +11,15 @@
     },
     "api/render.js": {
       "maxDuration": 60
+    },
+    "api/index.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [
     {
       "source": "/",
-      "destination": "/public/index.html"
-    },
-    {
-      "source": "/(:path*)",
-      "destination": "/public/:path*"
+      "destination": "/api/index"
     }
   ],
   "headers": [
