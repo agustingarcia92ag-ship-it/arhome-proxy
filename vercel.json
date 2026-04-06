@@ -1,0 +1,41 @@
+{
+  "functions": {
+    "api/gemini.js": {
+      "maxDuration": 30
+    },
+    "api/telegram.js": {
+      "maxDuration": 30
+    },
+    "api/products.js": {
+      "maxDuration": 15
+    },
+    "api/render.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/(:path*)",
+      "destination": "/public/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "ALLOWALL"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors *"
+        }
+      ]
+    }
+  ]
+}
